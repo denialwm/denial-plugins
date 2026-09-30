@@ -1,0 +1,4 @@
+schema: 1
+plugins:
+  - git: https://github.com/denialwm/denial-plugins.git
+    path: plugins/denial_taskbar

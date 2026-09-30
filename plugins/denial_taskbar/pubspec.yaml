@@ -1,0 +1,23 @@
+name: denial_taskbar
+description: A Windows-style bottom taskbar for Denial, built with material_ui.
+publish_to: none
+version: 0.0.0
+environment:
+  sdk: ^3.13.0
+  flutter: 3.47.5
+dependencies:
+  material_ui: ^1.4.0
+  denial_sdk: '0.0.0'
+  denial_flutter_sdk: '0.0.0'
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.3.2
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+denial_plugin:
+  schema: 1
+  name: Taskbar
+  provides:
+    - contract: package:denial_flutter_sdk/surfaces.dart#ShellSurface
+    - contract: package:denial_flutter_sdk/surfaces.dart#ShellWorkArea
