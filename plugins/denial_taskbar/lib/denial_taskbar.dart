@@ -38,12 +38,24 @@ final class TaskbarPlugin implements ShellSurface {
     );
   }
 
+  // The desktop rebuilds its surfaces whenever any environment field changes,
+  // such as an overview toggle. The taskbar depends only on its output and
+  // services, so an unchanged pair returns the same widget and Flutter skips
+  // the whole taskbar subtree.
+  static final _taskbars = <int, WindowsTaskbar>{};
+
   @override
-  Widget build(BuildContext context, {required ShellSurfaceContext surface}) =>
-      WindowsTaskbar(
-        monitorId: surface.environment.output.monitorId,
-        services: surface.services,
-      );
+  Widget build(BuildContext context, {required ShellSurfaceContext surface}) {
+    final monitorId = surface.environment.output.monitorId;
+    final taskbar = _taskbars[monitorId];
+    if (taskbar != null && identical(taskbar.services, surface.services)) {
+      return taskbar;
+    }
+    return _taskbars[monitorId] = WindowsTaskbar(
+      monitorId: monitorId,
+      services: surface.services,
+    );
+  }
 }
 
 @Provides(ShellWorkArea)

@@ -10,6 +10,8 @@ import 'package:material_ui/material_ui.dart';
 import 'tray.dart';
 import 'window_buttons.dart';
 import 'neutral_color.dart';
+import 'taskbar_actions.dart';
+import 'system_status.dart';
 
 /// A continuous desktop panel. Native window surfaces remain host-owned.
 class WindowsTaskbar extends StatelessWidget {
@@ -21,28 +23,41 @@ class WindowsTaskbar extends StatelessWidget {
   final int monitorId;
   final ShellServices services;
 
+  // Deriving a scheme from a seed solves dozens of HCT colors (about 1 ms on
+  // the Pad 4), so the theme is reused while the accent and brightness stay.
+  static ThemeData? _theme;
+  static (Color, Brightness)? _themeKey;
+
+  static ThemeData _themeFor(Color accent, Brightness brightness) {
+    final key = (accent, brightness);
+    if (_themeKey == key) {
+      return _theme!;
+    }
+    _themeKey = key;
+    return _theme = ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: accent,
+        brightness: brightness,
+      ),
+      splashFactory: NoSplash.splashFactory,
+      visualDensity: VisualDensity.compact,
+      tooltipTheme: const TooltipThemeData(
+        waitDuration: Duration(milliseconds: 600),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final shell = context.shellTheme;
-    final colors = ColorScheme.fromSeed(
-      seedColor: shell.accent,
-      brightness: shell.brightness,
-    );
     return ShellServicesScope(
       services: services,
       child: Localizations.override(
         context: context,
         delegates: GlobalMaterialLocalizations.delegates,
         child: Theme(
-          data: ThemeData(
-            useMaterial3: true,
-            colorScheme: colors,
-            splashFactory: NoSplash.splashFactory,
-            visualDensity: VisualDensity.compact,
-            tooltipTheme: const TooltipThemeData(
-              waitDuration: Duration(milliseconds: 600),
-            ),
-          ),
+          data: _themeFor(shell.accent, shell.brightness),
           // Desktop mouse drags belong to app reordering. The shell globally
           // enables mouse drag scrolling, which otherwise competes in both the
           // app list and the outer narrow-output scroll view. Wheel/trackpad
@@ -61,13 +76,18 @@ class WindowsTaskbar extends StatelessWidget {
   }
 }
 
-class _TaskbarSurface extends StatelessWidget {
+class _TaskbarSurface extends ConsumerWidget {
   const _TaskbarSurface({required this.monitorId});
   final int monitorId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
+    final services = ShellServicesScope.of(context);
+    final workspace = ref.watch(services.workspacesEnabled)
+        ? ref.watch(services.workspace(monitorId))
+        : null;
+    final battery = ref.watch(services.battery);
     return ShellInputRegion(
       debugLabel: 'Taskbar',
       child: _TaskbarBackdrop(
@@ -90,10 +110,19 @@ class _TaskbarSurface extends StatelessWidget {
                         final clockWidth =
                             (106 * MediaQuery.textScalerOf(context).scale(1))
                                 .clamp(106.0, 190.0);
-                        final stripWidth = (clockWidth + 224).clamp(
-                          constraints.maxWidth,
-                          double.infinity,
-                        );
+                        final workspaceWidth = workspace == null
+                            ? 0.0
+                            : workspace.count * 44.0 + 8;
+                        final batteryWidth = battery.capacity == null
+                            ? 0.0
+                            : 44.0;
+                        final stripWidth =
+                            (clockWidth +
+                                    224 +
+                                    workspaceWidth +
+                                    batteryWidth +
+                                    88)
+                                .clamp(constraints.maxWidth, double.infinity);
                         return SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: SizedBox(
@@ -101,17 +130,37 @@ class _TaskbarSurface extends StatelessWidget {
                             height: constraints.maxHeight,
                             child: Row(
                               children: [
+                                if (workspace != null)
+                                  SizedBox(
+                                    width: workspaceWidth,
+                                    child: _Workspaces(
+                                      monitorId: monitorId,
+                                      workspace: workspace,
+                                    ),
+                                  ),
                                 Expanded(
                                   child: WindowButtons(
                                     monitorId: monitorId,
-                                    centerX: stripWidth / 2 + 2,
+                                    centerX:
+                                        stripWidth / 2 + 2 - workspaceWidth,
                                     launcher: const _StartButton(),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 TaskbarTray(monitorId: monitorId),
+                                const TaskbarNetwork(),
+                                TaskbarVolume(monitorId: monitorId),
+                                if (battery.capacity case final capacity?)
+                                  SizedBox(
+                                    width: batteryWidth,
+                                    child: _Battery(
+                                      capacity: capacity,
+                                      charging: battery.charging,
+                                    ),
+                                  ),
                                 SizedBox(
                                   width: clockWidth,
+                                  height: double.infinity,
                                   child: const _Clock(),
                                 ),
                               ],
@@ -199,6 +248,143 @@ class _StartButton extends StatelessWidget {
   );
 }
 
+class _Workspaces extends StatelessWidget {
+  const _Workspaces({required this.monitorId, required this.workspace});
+
+  final int monitorId;
+  final WorkspaceStatus workspace;
+
+  @override
+  Widget build(BuildContext context) {
+    final services = ShellServicesScope.of(context);
+    final strings = services.strings(context);
+    final foreground = taskbarForeground(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var id = 1; id <= workspace.count; id++)
+          SizedBox(
+            width: 44,
+            height: double.infinity,
+            child: Builder(
+              builder: (context) {
+                final active = id == workspace.active;
+                final occupied = workspace.occupied.contains(id);
+                final label = [
+                  strings.workspaceLabel(id),
+                  if (active) strings.workspaceActive,
+                  occupied ? strings.workspaceOccupied : strings.workspaceEmpty,
+                ].join(', ');
+                return Tooltip(
+                  message: label,
+                  excludeFromSemantics: true,
+                  child: InkWell(
+                    onTap: () => services.switchWorkspace(
+                      monitorId: monitorId,
+                      workspaceId: id,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                    mouseCursor: services.linkCursor,
+                    child: Semantics(
+                      label: label,
+                      selected: active,
+                      button: true,
+                      child: ExcludeSemantics(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: active
+                                ? foreground.withValues(alpha: 0.14)
+                                : null,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    strings.numberValue(id),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(color: foreground),
+                                  ),
+                                ),
+                              ),
+                              if (occupied)
+                                Positioned(
+                                  bottom: 4,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: foreground,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const SizedBox.square(dimension: 3),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+}
+
+class _Battery extends StatelessWidget {
+  const _Battery({required this.capacity, required this.charging});
+
+  final int capacity;
+  final bool charging;
+
+  @override
+  Widget build(BuildContext context) {
+    final services = ShellServicesScope.of(context);
+    final label = services
+        .strings(context)
+        .batteryLine(charging ? 'charging' : 'discharging', capacity);
+    final icon = switch (taskbarBatteryBars(capacity)) {
+      0 => Icons.battery_0_bar_rounded,
+      1 => Icons.battery_1_bar_rounded,
+      2 => Icons.battery_2_bar_rounded,
+      3 => Icons.battery_3_bar_rounded,
+      4 => Icons.battery_4_bar_rounded,
+      5 => Icons.battery_5_bar_rounded,
+      6 => Icons.battery_6_bar_rounded,
+      _ => Icons.battery_full_rounded,
+    };
+    return IconButton(
+      tooltip: label,
+      onPressed: services.openPowerSettings,
+      style: IconButton.styleFrom(
+        padding: const EdgeInsets.all(4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      ),
+      icon: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: taskbarForeground(context), size: 24),
+          if (charging)
+            Icon(
+              Icons.bolt_rounded,
+              color: taskbarForeground(context),
+              size: 12,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Clock extends ConsumerWidget {
   const _Clock();
   @override
@@ -207,28 +393,40 @@ class _Clock extends ConsumerWidget {
     final now = ref.watch(services.clock).value ?? DateTime.now();
     final strings = services.strings(context);
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerRight,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              strings.time(now),
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: taskbarForeground(context),
+    return Semantics(
+      button: true,
+      label: strings.openDashboard,
+      child: Tooltip(
+        message: strings.openDashboard,
+        child: InkWell(
+          onTap: services.toggleDashboard,
+          borderRadius: BorderRadius.circular(4),
+          mouseCursor: services.linkCursor,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    strings.time(now),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: taskbarForeground(context),
+                    ),
+                  ),
+                  Text(
+                    strings.shortDate(now),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: taskbarForeground(context).withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
               ),
             ),
-            Text(
-              strings.shortDate(now),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: taskbarForeground(context).withValues(alpha: 0.7),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

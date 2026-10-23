@@ -14,6 +14,7 @@ import 'window_groups.dart';
 import 'taskbar_settings.dart';
 import 'neutral_color.dart';
 import 'preview_emphasis.dart';
+import 'taskbar_actions.dart';
 
 const _instanceUnderlineOffset = 4.0;
 const _instanceHighlightOffset = 3.0;
@@ -154,6 +155,7 @@ class _WindowButtonsState extends ConsumerState<WindowButtons> {
   Widget build(BuildContext context) {
     final services = ShellServicesScope.of(context);
     _catalog = ref.watch(services.applications);
+    final desktopVisible = ref.watch(services.desktopVisible);
     final prefsState = ref.watch(taskbarPreferencesProvider);
     final prefs = prefsState.value ?? const TaskbarPreferences();
     _pinnedApps = prefs.pinned;
@@ -207,6 +209,7 @@ class _WindowButtonsState extends ConsumerState<WindowButtons> {
               launchId: app?.id ?? pin?.id,
               monitorId: widget.monitorId,
               windows: windows,
+              desktopVisible: desktopVisible,
               pinned: pin != null,
               dragging: _dragging,
               canPin:
@@ -297,6 +300,7 @@ class _WindowButton extends StatefulWidget {
     required this.launchId,
     required this.monitorId,
     required this.windows,
+    required this.desktopVisible,
     required this.pinned,
     required this.dragging,
     required this.canPin,
@@ -309,6 +313,7 @@ class _WindowButton extends StatefulWidget {
   final String? launchId;
   final int monitorId;
   final List<ApplicationWindow> windows;
+  final bool desktopVisible;
   final bool pinned;
   final bool dragging;
   final bool canPin;
@@ -473,12 +478,30 @@ class _WindowButtonState extends State<_WindowButton>
         }
       });
       if (!started) _openMenu();
-    } else if (widget.windows.length == 1) {
+    } else if (widget.windows.length == 1 ||
+        widget.windows.every((window) => window.tiled)) {
       _hideImmediately();
-      services.activateWindow(widget.windows.single.id);
+      _activateWindows(widget.windows);
     } else {
       _menu = false;
       _openPreviews();
+    }
+  }
+
+  void _activateWindows(List<ApplicationWindow> windows) {
+    final services = ShellServicesScope.of(context);
+    if (shouldMinimizeTaskbarWindow(
+      tiled: windows.every((window) => window.tiled),
+      minimized: windows.every((window) => window.minimized),
+      desktopVisible: widget.desktopVisible,
+    )) {
+      for (final window in windows) {
+        if (!window.minimized) services.minimizeWindow(window.id);
+      }
+    } else {
+      for (final window in windows) {
+        services.activateWindow(window.id);
+      }
     }
   }
 
@@ -785,7 +808,6 @@ class _WindowButtonState extends State<_WindowButton>
       geometry.output.left + 8,
       math.max(geometry.output.left + 8, geometry.output.right - 8 - width),
     );
-    final services = ShellServicesScope.of(context);
     return Stack(
       children: [
         Positioned(
@@ -837,7 +859,7 @@ class _WindowButtonState extends State<_WindowButton>
                                   window: window,
                                   onTap: () {
                                     _hideImmediately();
-                                    services.activateWindow(window.id);
+                                    _activateWindows([window]);
                                   },
                                 ),
                               ),

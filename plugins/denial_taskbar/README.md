@@ -17,7 +17,10 @@ painting onto adjacent outputs or moving controls and work-area reservations.
   The list follows the output's current workspace, including minimized windows.
 - Hover an icon to see animated live client previews with title overlays, centered above
   the group and bounded to its monitor. Large groups scroll horizontally. Click
-  a preview to focus/restore that window; clicking a grouped icon opens its row.
+  a preview to focus/restore that window in stacking mode; tiled layouts toggle
+  minimization. In tiled layouts, clicking an app icon minimizes its visible
+  windows, or restores them all if they are all minimized. In stacking mode,
+  a single-window icon focuses/restores it and a grouped icon opens its row.
   Client texture updates drive previews without screenshots or window resizing.
   Windows without client textures use the host's application-icon fallback.
 - Right-click an application for a compact glass menu with Pin/Unpin. Pinned
@@ -39,7 +42,22 @@ painting onto adjacent outputs or moving controls and work-area reservations.
   focus highlight.
   Closed pins have no running indicator. Preview motion respects reduced motion.
 - Launcher, tray controls, clock, and date use neutral foreground colors.
-- Clock and date use the shell's locale and sit at the right edge.
+- Clock and date use the shell's locale and sit at the right edge. Tap or click
+  anywhere in their clock zone to toggle the desktop dashboard. Tapping outside
+  the dashboard also dismisses it.
+- A battery icon beside the clock follows the charge level, with a bolt while
+  charging and a localized percentage tooltip. It is hidden without a battery;
+  clicking it opens power settings.
+- The volume icon opens a vertical slider in a glass flyout using the dashboard's
+  shared slider, accent, track colors, and the configured panel roundness. Changes
+  apply while dragging and reconcile through the host's existing audio controller.
+  Outside presses, Escape, or hiding the taskbar close the flyout. Arrow keys and
+  the mouse wheel adjust volume; Home/End select the minimum/maximum.
+- Wi-Fi shows the same connection, signal-strength steps, and dimmed disconnected
+  glyph as mobile. Its tooltip shows the connected network and signal strength;
+  it is a status indicator with no network-management action yet.
+- When workspaces are enabled, numbered buttons on the left switch workspaces
+  on that output. The current workspace is highlighted; occupied ones have a dot.
 - A 12px transparent strip at the far-right edge toggles Show Desktop across
   outputs. It retains window geometry, stacking, and minimized state, and clicking
   again restores the presentation. It has a subtle divider and keyboard/hover
@@ -79,7 +97,8 @@ from the matching Denial installation; no Denial SDK publication to pub.dev is
 required. Plugin Manager supplies the installed SDK when compiling this package.
 
 The pure Dart checks are `test/window_groups_test.dart`,
-`test/preview_emphasis_test.dart`, and `test/taskbar_preferences_test.dart`.
+`test/preview_emphasis_test.dart`, `test/taskbar_preferences_test.dart`, and
+`test/taskbar_actions_test.dart`.
 Run each with Denial's matching `dart` executable. Visual validation belongs to
 the user.
 
